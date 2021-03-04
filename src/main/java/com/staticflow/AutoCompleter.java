@@ -1,0 +1,226 @@
+package com.staticflow;
+
+import javax.swing.*;
+import javax.swing.event.CaretEvent;
+import javax.swing.event.CaretListener;
+import javax.swing.event.DocumentEvent;
+import javax.swing.event.DocumentListener;
+import javax.swing.text.BadLocationException;
+import java.awt.*;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
+import java.util.ArrayList;
+import java.util.Arrays;
+
+/**
+ * This class handles the autocomplete. it keeps a reference to the JTextArea is autocompletes for and generates a list
+ * of possible candidates, updated after every letter typed.
+ */
+public class AutoCompleter implements DocumentListener, CaretListener{
+
+    //The document we are autocompleting for
+    private JTextArea source;
+    //Our current offset position in the document
+    private int pos;
+    //Stateflag to determine if the last action was a backspace
+    private boolean backspaceMode;
+    //The suggestion frame which holds the current autocomplete candidates
+    private JFrame suggestionPane;
+    //List model to hold the candidate autocompletions
+    private DefaultListModel<String> suggestionsModel = new DefaultListModel<>();
+    //The content of the source document we will be replacing
+    private String content;
+
+    /**
+     * This listener follows the caret and updates where we should draw the suggestions box
+     * @param e the carent event
+     */
+    @Override
+    public void caretUpdate(CaretEvent e) {
+        Point p = source.getCaret().getMagicCaretPosition();
+        if(p != null) {
+            Point np = new Point();
+            np.x = p.x + source.getLocationOnScreen().x;
+            np.y = p.y + source.getLocationOnScreen().y+25;
+            suggestionPane.setLocation(np);
+        }
+    }
+
+
+    /**
+     * Initializes the suggestion pane and attaches our listeners
+     * @param s the source to provide autocompletions for
+     */
+    AutoCompleter(JTextArea s) {
+        this.source = s;
+        this.source.addCaretListener(this);
+        suggestionPane = new JFrame();
+        suggestionPane.setSize(250,250);
+        suggestionPane.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+        suggestionPane.setUndecorated(true);
+        suggestionPane.setAutoRequestFocus(false);
+        JPanel pane = new JPanel(new BorderLayout());
+        JList<String> suggestions = new JList<>(suggestionsModel);
+        JScrollPane scroller = new JScrollPane(suggestions);
+        pane.add(scroller, BorderLayout.CENTER);
+        suggestionPane.add(pane);
+        //Double clicks will pick the autocompletion to commit to
+        suggestions.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseClicked(MouseEvent e) {
+                JList list = (JList)e.getSource();
+                if (e.getClickCount() == 2) {
+
+                    // Double-click detected
+                    int start = getTextReplacementStart();
+                    int index = list.locationToIndex(e.getPoint());
+                    String selectedCompletion = suggestionsModel.elementAt(index);
+                    source.select(start+1,pos+1);
+                    source.replaceSelection(selectedCompletion+": ");
+                    source.setCaretPosition(source.getSelectionEnd());
+                    source.moveCaretPosition(source.getSelectionEnd());
+                    suggestionPane.setVisible(false);
+
+                }
+            }
+        });
+
+    }
+
+    /**
+     * Get's the start of the users text we are replacing
+     * @return starting index of the users input
+     */
+    private int getTextReplacementStart() {
+        int start;
+        if(backspaceMode) {
+            for (start = pos-1; start >= 0; start--) {
+                if (Character.isWhitespace(content.charAt(start))) {
+                    break;
+                }
+            }
+        } else {
+            for (start = pos; start >= 0; start--) {
+                if (Character.isWhitespace(content.charAt(start))) {
+                    break;
+                }
+            }
+        }
+        return start;
+    }
+
+    JTextArea getSource() {
+        return this.source;
+    }
+
+    void detachFromSource(){
+        this.suggestionPane.dispose();
+        this.source.removeCaretListener(this);
+        this.source.getDocument().removeDocumentListener(this);
+
+
+    }
+
+    /**
+     * Searches the autocompletions for candidates. Exact matches are ignored.
+     * @param search What to search for
+     * @return the results that match, if any
+     */
+    private static ArrayList<String> prefixSearcher(String search) {
+        ArrayList<String> results = new ArrayList<>();
+        for(String in : ExtensionState.getInstance().getKeywords()) {
+            if( !in.toLowerCase().equals(search.trim()) && in.toLowerCase().startsWith(search.trim()) ) {
+                results.add(in);
+            }
+        }
+        return results;
+    }
+
+
+
+    @Override
+    public void insertUpdate(DocumentEvent e) {
+        backspaceMode = false;
+        checkForCompletions(e);
+    }
+
+    @Override
+    public void removeUpdate(DocumentEvent e) {
+        backspaceMode = true;
+        if(Character.isWhitespace(source.getText().charAt(e.getOffset()))) {
+            suggestionPane.setVisible(false);
+        }
+        checkForCompletions(e);
+    }
+
+    @Override
+    public void changedUpdate(DocumentEvent e) {
+
+    }
+
+
+    /**
+     * Handles changes to the document by getting the recent word entered by the user and searching for completion candidates.
+     * @param e change event
+     */
+    private void checkForCompletions(DocumentEvent e) {
+        pos = e.getOffset();
+        content = null;
+
+        try {
+            content = this.source.getText(0, pos + 1);
+        } catch (BadLocationException ex) {
+            ex.printStackTrace();
+        }
+
+        if (e.getLength() != 1) {
+            return;
+        }
+
+
+        int start = getTextReplacementStart();
+
+
+        if (pos - start < 1 && !backspaceMode) {
+            return;
+        }
+
+
+        String prefix = content.substring(start + 1);
+        if (prefix.trim().length() == 0 || prefix.contains(":")) {
+            suggestionPane.setVisible(false);
+        } else {
+            ExtensionState.getInstance().getCallbacks().printOutput("Searching for " + prefix);
+            ArrayList<String> matches = prefixSearcher(prefix.toLowerCase());
+            ExtensionState.getInstance().getCallbacks().printOutput(Arrays.toString(matches.toArray()));
+            if (matches.size() != 0) {
+                SwingUtilities.invokeLater(
+                        new CompletionTask(matches));
+            } else {
+                suggestionPane.setVisible(false);
+            }
+        }
+    }
+
+
+    /**
+     * Updates the suggestion pane with the new options
+     */
+    private class CompletionTask
+            implements Runnable {
+
+        CompletionTask(ArrayList<String> completions) {
+            suggestionsModel.removeAllElements();
+            for(String completion : completions) {
+                suggestionsModel.addElement(completion);
+            }
+        }
+
+        @Override
+        public void run() {
+            suggestionPane.setVisible(true);
+        }
+    }
+
+
+}
