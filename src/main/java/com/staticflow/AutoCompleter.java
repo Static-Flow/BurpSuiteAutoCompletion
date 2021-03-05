@@ -30,6 +30,11 @@ public class AutoCompleter implements DocumentListener, CaretListener{
     private DefaultListModel<String> suggestionsModel = new DefaultListModel<>();
     //The content of the source document we will be replacing
     private String content;
+    private enum MODE {
+        INSERT,
+        COMPLETION
+    }
+    private MODE mode = MODE.INSERT;
 
     /**
      * This listener follows the caret and updates where we should draw the suggestions box
@@ -37,6 +42,8 @@ public class AutoCompleter implements DocumentListener, CaretListener{
      */
     @Override
     public void caretUpdate(CaretEvent e) {
+        pos = e.getDot();
+        System.out.println(pos);
         Point p = source.getCaret().getMagicCaretPosition();
         if(p != null) {
             Point np = new Point();
@@ -75,10 +82,10 @@ public class AutoCompleter implements DocumentListener, CaretListener{
                     int start = getTextReplacementStart();
                     int index = list.locationToIndex(e.getPoint());
                     String selectedCompletion = suggestionsModel.elementAt(index);
-                    source.select(start+1,pos+1);
+                    System.out.println(start+1 + " : " + pos+1);
+                    source.select(start+1,pos);
                     source.replaceSelection(selectedCompletion+": ");
                     source.setCaretPosition(source.getSelectionEnd());
-                    source.moveCaretPosition(source.getSelectionEnd());
                     suggestionPane.setVisible(false);
 
                 }
@@ -94,13 +101,14 @@ public class AutoCompleter implements DocumentListener, CaretListener{
     private int getTextReplacementStart() {
         int start;
         if(backspaceMode) {
-            for (start = pos-1; start >= 0; start--) {
+            for (start = pos-2; start >= 0; start--) {
+                System.out.println(content.charAt(start));
                 if (Character.isWhitespace(content.charAt(start))) {
                     break;
                 }
             }
         } else {
-            for (start = pos; start >= 0; start--) {
+            for (start = pos-1; start >= 0; start--) {
                 if (Character.isWhitespace(content.charAt(start))) {
                     break;
                 }
@@ -140,17 +148,28 @@ public class AutoCompleter implements DocumentListener, CaretListener{
 
     @Override
     public void insertUpdate(DocumentEvent e) {
-        backspaceMode = false;
-        checkForCompletions(e);
+        if (mode == MODE.COMPLETION) {
+            mode = MODE.INSERT;
+        } else {
+            backspaceMode = false;
+            if (Character.isWhitespace(source.getText().charAt(pos))) {
+                suggestionPane.setVisible(false);
+            }
+            checkForCompletions();
+        }
     }
 
     @Override
     public void removeUpdate(DocumentEvent e) {
-        backspaceMode = true;
-        if(Character.isWhitespace(source.getText().charAt(e.getOffset()))) {
-            suggestionPane.setVisible(false);
+        if (mode == MODE.COMPLETION) {
+            mode = MODE.INSERT;
+        } else {
+            backspaceMode = true;
+            if (Character.isWhitespace(source.getText().charAt(pos))) {
+                suggestionPane.setVisible(false);
+            }
+            checkForCompletions();
         }
-        checkForCompletions(e);
     }
 
     @Override
@@ -161,10 +180,9 @@ public class AutoCompleter implements DocumentListener, CaretListener{
 
     /**
      * Handles changes to the document by getting the recent word entered by the user and searching for completion candidates.
-     * @param e change event
      */
-    private void checkForCompletions(DocumentEvent e) {
-        pos = e.getOffset();
+    private void checkForCompletions() {
+        //pos = e.getOffset();
         content = null;
 
         try {
@@ -173,24 +191,26 @@ public class AutoCompleter implements DocumentListener, CaretListener{
             ex.printStackTrace();
         }
 
-        if (e.getLength() != 1) {
-            return;
-        }
-
-
+//        if (e.getLength() != 1) {
+//            return;
+//        }
+//
+//
         int start = getTextReplacementStart();
+//
 
 
+//
         if (pos - start < 1 && !backspaceMode) {
             return;
         }
-
-
+//
+//
         String prefix = content.substring(start + 1);
-        if (prefix.trim().length() == 0 || prefix.contains(":")) {
+        ExtensionState.getInstance().getCallbacks().printOutput("Searching for " + prefix);
+        if (prefix.trim().length() == 0 || prefix.contains(":") || prefix.trim().length() == 1) {
             suggestionPane.setVisible(false);
         } else {
-            ExtensionState.getInstance().getCallbacks().printOutput("Searching for " + prefix);
             ArrayList<String> matches = prefixSearcher(prefix.toLowerCase());
             ExtensionState.getInstance().getCallbacks().printOutput(Arrays.toString(matches.toArray()));
             if (matches.size() != 0) {
@@ -210,6 +230,7 @@ public class AutoCompleter implements DocumentListener, CaretListener{
             implements Runnable {
 
         CompletionTask(ArrayList<String> completions) {
+            mode = MODE.COMPLETION;
             suggestionsModel.removeAllElements();
             for(String completion : completions) {
                 suggestionsModel.addElement(completion);
