@@ -26,6 +26,8 @@ public class BurpAutoCompleteExtension  implements IBurpExtender , AWTEventListe
     @Override
     public void extensionUnloaded() {
         ExtensionState.getInstance().getCallbacks().printOutput("removing listeners");
+        System.out.println(Arrays.toString(Toolkit.getDefaultToolkit().getAWTEventListeners()));
+
         Toolkit.getDefaultToolkit().removeAWTEventListener(this);
         System.out.println(Arrays.toString(Toolkit.getDefaultToolkit().getAWTEventListeners()));
         for(AutoCompleter listener : ExtensionState.getInstance().getListeners()) {

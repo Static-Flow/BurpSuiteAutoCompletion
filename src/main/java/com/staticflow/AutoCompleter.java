@@ -43,7 +43,7 @@ public class AutoCompleter implements DocumentListener, CaretListener{
     @Override
     public void caretUpdate(CaretEvent e) {
         pos = e.getDot();
-        System.out.println(pos);
+        System.out.println("Caret: "+pos);
         Point p = source.getCaret().getMagicCaretPosition();
         if(p != null) {
             Point np = new Point();
@@ -60,6 +60,7 @@ public class AutoCompleter implements DocumentListener, CaretListener{
      */
     AutoCompleter(JTextArea s) {
         this.source = s;
+        this.pos = this.source.getCaret().getDot();
         this.source.addCaretListener(this);
         suggestionPane = new JFrame();
         suggestionPane.setSize(250,250);
@@ -83,10 +84,15 @@ public class AutoCompleter implements DocumentListener, CaretListener{
                     int index = list.locationToIndex(e.getPoint());
                     String selectedCompletion = suggestionsModel.elementAt(index);
                     System.out.println(start+1 + " : " + pos+1);
-                    source.select(start+1,pos);
-                    source.replaceSelection(selectedCompletion+": ");
-                    source.setCaretPosition(source.getSelectionEnd());
-                    suggestionPane.setVisible(false);
+                    SwingUtilities.invokeLater(new Runnable() {
+                        @Override
+                        public void run() {
+                            source.select(start+1,pos);
+                            source.replaceSelection(selectedCompletion+": ");
+                            source.setCaretPosition(source.getSelectionEnd());
+                            suggestionPane.setVisible(false);
+                        }
+                    });
 
                 }
             }
@@ -152,10 +158,11 @@ public class AutoCompleter implements DocumentListener, CaretListener{
             mode = MODE.INSERT;
         } else {
             backspaceMode = false;
-            if (Character.isWhitespace(source.getText().charAt(pos))) {
+            if (Character.isWhitespace(this.source.getText().charAt(pos))) {
                 suggestionPane.setVisible(false);
+            } else {
+                checkForCompletions();
             }
-            checkForCompletions();
         }
     }
 
@@ -165,10 +172,11 @@ public class AutoCompleter implements DocumentListener, CaretListener{
             mode = MODE.INSERT;
         } else {
             backspaceMode = true;
-            if (Character.isWhitespace(source.getText().charAt(pos))) {
-                suggestionPane.setVisible(false);
-            }
-            checkForCompletions();
+//            if (Character.isWhitespace(source.getText().charAt(pos))) {
+//                suggestionPane.setVisible(false);
+//            } else {
+//                checkForCompletions();
+//            }
         }
     }
 
@@ -190,7 +198,8 @@ public class AutoCompleter implements DocumentListener, CaretListener{
         } catch (BadLocationException ex) {
             ex.printStackTrace();
         }
-
+        System.out.println(content.charAt(pos));
+        System.out.println(content);
 //        if (e.getLength() != 1) {
 //            return;
 //        }
